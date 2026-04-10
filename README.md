@@ -1,16 +1,58 @@
-# React + Vite
+# LedgerSnap: The Financial Architect
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+> "Clarity is the ultimate sophisticated simplicity." — *The Ghostie Protocol*
 
-Currently, two official plugins are available:
+LedgerSnap is not just a personal finance tracker; it is an **archival system** for the modern professional. Built on the principles of high-fidelity data visualization and effortless mobile ergonomics, it transforms chaotic spending into a streamlined digital ledger.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## 🏛️ The Architecture
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+LedgerSnap is engineered for those who demand precision and aesthetic absolute. Inspired by the **No-Line** design philosophy, the interface disappears to let your capital reveal its true trajectory.
 
-## Expanding the ESLint configuration
+### **1. Archival Stream**
+A vertical, time-stamped narrative of your financial lifecycle. Every transaction is treated as a historical document, verified and immutable.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### **2. Deep Intel Hub**
+A Bento-inspired analytical dashboard that breaks down your capital allocation into high-bandwidth insights. Understand your inflows and outflows through a lens of total clarity.
+
+### **3. The Ghostie Protocol**
+A premium security aesthetic that prioritizes dark-mode integrity and high-contrast surfaces. Your data is your sanctuary.
+
+### **4. Responsible Mobile Design**
+Fully optimized for the narrowest viewports. From fluid typography to touch-repositioned interactive anchors, LedgerSnap feels native on every screen.
+
+---
+
+## 🛠️ Infrastructure
+
+- **Core**: [React](https://reactjs.org/) + [Vite](https://vitejs.dev/)
+- **Visuals**: [Framer Motion](https://www.framer.com/motion/) (Weighted Spring Physics)
+- **Styling**: [Tailwind CSS](https://tailwindcss.com/) (HCT Color System)
+- **Icons**: Material Symbols (Weight 700 / Black)
+
+---
+
+## ⚡ Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/Ghostiemoh/ledgersnap.git
+
+# Enter the shard
+cd ledgersnap
+
+# Install dependencies
+npm install
+
+# Initialize development protocol
+npm run dev
+```
+
+---
+
+## 🖋️ Design Notes
+
+LedgerSnap utilizes a bespoke **HCT (Hue, Chroma, Tone)** color system designed for maximum legibility in variable lighting conditions. The typography scales fluidly using a proprietary `text-responsive` utility system, ensuring that your financial figures always command the space they deserve.
+
+**The Ledger is synchronized. The Architecture is sound.**
