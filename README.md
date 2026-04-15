@@ -2,6 +2,8 @@
 
 > "Clarity is the ultimate sophisticated simplicity." — *The Ghostie Protocol*
 
+**🌐 Live Protocol: [ledgersnap-one.vercel.app](https://ledgersnap-one.vercel.app)**
+
 LedgerSnap is not just a personal finance tracker; it is an **archival system** for the modern professional. Built on the principles of high-fidelity data visualization and effortless mobile ergonomics, it transforms chaotic spending into a streamlined digital ledger.
 
 ---
