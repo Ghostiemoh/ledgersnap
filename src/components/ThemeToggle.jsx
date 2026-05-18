@@ -1,27 +1,20 @@
 import React from 'react';
+import { Moon, Sun } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
-import { motion } from 'framer-motion';
 
 const ThemeToggle = () => {
   const { theme, toggleTheme } = useTheme();
+  const Icon = theme === 'light' ? Moon : Sun;
 
   return (
-    <motion.button
-      whileHover={{ scale: 1.05 }}
-      whileTap={{ scale: 0.95 }}
+    <button
+      type="button"
       onClick={toggleTheme}
-      className="w-10 h-10 rounded-2xl bg-surface-container-high flex items-center justify-center text-on-surface hover:bg-surface-dim transition-colors border border-outline-variant/10 shadow-sm"
-      aria-label="Toggle theme"
+      className="button-ghost h-10 w-10 p-0"
+      aria-label={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
     >
-      <motion.span
-        key={theme}
-        initial={{ y: 5, opacity: 0, rotate: -45 }}
-        animate={{ y: 0, opacity: 1, rotate: 0 }}
-        className="material-symbols-outlined"
-      >
-        {theme === 'light' ? 'dark_mode' : 'light_mode'}
-      </motion.span>
-    </motion.button>
+      <Icon className="h-4 w-4" aria-hidden="true" />
+    </button>
   );
 };
 

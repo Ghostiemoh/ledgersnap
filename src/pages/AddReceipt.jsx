@@ -1,407 +1,367 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useLedger, getCategoryIcon } from '../context/LedgerContext';
+import { AlertCircle, ArrowRight, Camera, CheckCircle2, Loader2, PencilLine, ShieldCheck, X } from 'lucide-react';
 import { createWorker } from 'tesseract.js';
-import { motion, AnimatePresence } from 'framer-motion';
+import { CATEGORIES, useLedger } from '../context/LedgerContext';
+import { formatCurrency } from '../lib/formatters';
+
+const defaultForm = {
+  name: '',
+  amount: '',
+  category: 'Lifestyle',
+  isPositive: false,
+  account: '',
+};
+
+const parseReceiptText = (text, fileName) => {
+  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+  const name =
+    text.match(/(?:beneficiary|merchant|payee|name)\s*[:-]\s*([A-Za-z0-9 &.'-]{2,60})/i)?.[1]?.trim() ||
+    lines.find((line) => /[A-Za-z]{3}/.test(line)) ||
+    fileName.replace(/\.[^.]+$/, '');
+
+  const amountMatch = text.match(/(?:NGN|N)?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i);
+  const amount = amountMatch ? Number(amountMatch[1].replaceAll(',', '')) : 0;
+  const isCredit = /credit|received|deposit|paid\s+in|inflow/i.test(text);
+
+  return {
+    name,
+    amount: isCredit ? Math.abs(amount) : -Math.abs(amount || 0),
+    category: 'Uncategorized',
+    status: amount ? 'AI extracted' : 'Needs amount review',
+    account: 'Receipt scan',
+  };
+};
 
 const AddReceipt = () => {
   const navigate = useNavigate();
-  const { addToInbox, addTransaction } = useLedger();
+  const { addToInbox, addTransaction, settings } = useLedger();
   const fileInputRef = useRef(null);
-  
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [showManualForm, setShowManualForm] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const [successMode, setSuccessMode] = useState(null);
+  const [error, setError] = useState('');
+  const [formData, setFormData] = useState(defaultForm);
 
-  const [formData, setFormData] = useState({
-    name: '',
-    amount: '',
-    category: 'Lifestyle',
-    isPositive: false
-  });
+  useEffect(() => {
+    if (!showManualForm) return undefined;
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') setShowManualForm(false);
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [showManualForm]);
 
-  const categories = ['Groceries', 'Technology', 'Lifestyle', 'Transport', 'Invoice', 'Personal'];
-
-  const finalizeAction = (item, isManual = false) => {
-    if (isManual) {
-      addTransaction(item);
-    } else {
-      addToInbox(item);
-    }
-    setIsProcessing(false);
-    setSuccess(true);
-    setTimeout(() => navigate(isManual ? '/tracker' : '/inbox'), 2000);
+  const finish = (mode) => {
+    setSuccessMode(mode);
+    setTimeout(() => navigate(mode === 'manual' ? '/tracker' : '/inbox'), 900);
   };
 
-  const handleFileUpload = async (e) => {
-    const file = e.target.files?.[0];
+  const handleFileUpload = async (event) => {
+    const file = event.target.files?.[0];
     if (!file) return;
 
+    setError('');
+    setSuccessMode(null);
     setIsProcessing(true);
-    setProgress(0);
+    setProgress(8);
 
     try {
+      if (!settings.autoExtract) {
+        addToInbox({
+          name: file.name.replace(/\.[^.]+$/, ''),
+          amount: 0,
+          category: 'Uncategorized',
+          status: 'Ready for manual review',
+          account: 'Receipt image',
+        });
+        finish('scan');
+        return;
+      }
+
       const worker = await createWorker('eng', 1, {
-        logger: m => {
-          if (m.status === 'recognizing text') {
-            setProgress(Math.floor(m.progress * 100));
+        logger: (message) => {
+          if (message.status === 'recognizing text') {
+            setProgress(Math.max(8, Math.floor(message.progress * 100)));
           }
-        }
+        },
       });
 
-      const { data: { text } } = await worker.recognize(file);
+      const { data } = await worker.recognize(file);
       await worker.terminate();
 
-      const raw = text;
-      const lines = raw.split('\n').map(l => l.trim()).filter(l => l.length > 1);
-
-      // (OCR logic remains same for extraction quality)
-      let beneficiary = null;
-      const namePatterns = [/beneficiary\s*[:\-]\s*([A-Za-z][^\n\r]{2,50})/i, /payee\s*[:\-]\s*([A-Za-z][^\n\r]{2,50})/i, /name\s*[:\-]\s*([A-Za-z][^\n\r]{2,50})/i];
-      for (const pat of namePatterns) {
-        const m = raw.match(pat);
-        if (m?.[1]) { beneficiary = m[1].replace(/[^\w\s]/g, '').trim(); break; }
-      }
-      if (!beneficiary) beneficiary = lines[0] || file.name.split('.')[0];
-
-      let isCredit = /credit|received|inflow|deposit/i.test(raw);
-      let amount = 0;
-      const amountMatch = raw.match(/(?:NGN|₦|N)?\s*([\d,]+(?:\.\d{1,2})?)/i);
-      if (amountMatch) amount = parseFloat(amountMatch[1].replace(/,/g, ''));
-
-      finalizeAction({
-        name: beneficiary,
-        amount: isCredit ? amount : -amount,
-        category: 'Uncategorized',
-        status: isCredit ? 'Credit · AI Captured' : 'Debit · AI Captured',
-        account: 'Receipt Scan',
-        date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      });
-
-    } catch (err) {
-      finalizeAction({
-        name: file.name.split('.')[0],
-        amount: -100.00,
-        category: 'Uncategorized',
-        status: 'Scan Failed – Manual Intervention Required',
-        account: 'Manual Review'
-      });
+      addToInbox(parseReceiptText(data.text, file.name));
+      finish('scan');
+    } catch {
+      setError('We could not read that image. Try a clearer receipt photo or add the entry manually.');
+    } finally {
+      setIsProcessing(false);
+      setProgress(0);
+      event.target.value = '';
     }
   };
 
-  const handleManualSubmit = (e) => {
-    e.preventDefault();
-    const amountNum = parseFloat(formData.amount);
-    if (isNaN(amountNum)) return;
-    
-    finalizeAction({
-      name: formData.name || 'Manual Entry',
-      amount: formData.isPositive ? Math.abs(amountNum) : -Math.abs(amountNum),
+  const handleManualSubmit = (event) => {
+    event.preventDefault();
+    const amount = Number(formData.amount);
+
+    if (!formData.name.trim() || !Number.isFinite(amount) || amount <= 0) {
+      setError('Add a merchant name and an amount greater than zero.');
+      return;
+    }
+
+    addTransaction({
+      name: formData.name.trim(),
+      amount: formData.isPositive ? Math.abs(amount) : -Math.abs(amount),
       category: formData.category,
-      status: 'Manual Archival Verified'
-    }, true);
-  };
+      account: formData.account.trim() || 'Manual entry',
+      status: 'Manual entry',
+    });
 
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: { 
-      opacity: 1,
-      transition: { staggerChildren: 0.15 }
-    }
-  };
-
-  const itemVariants = {
-    hidden: { y: 30, opacity: 0 },
-    visible: { y: 0, opacity: 1 }
+    setFormData(defaultForm);
+    setShowManualForm(false);
+    finish('manual');
   };
 
   return (
-    <motion.div 
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-      className="max-w-3xl mx-auto px-6 pt-12 pb-32 space-y-16"
-    >
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        className="hidden" 
-        accept="image/*,application/pdf"
+    <div className="page-shell max-w-5xl space-y-8">
+      <input
+        ref={fileInputRef}
+        className="hidden"
+        type="file"
+        accept="image/*"
         onChange={handleFileUpload}
       />
 
-      {/* Extraction Overlay */}
-      <AnimatePresence>
-        {isProcessing && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-on-surface/95 backdrop-blur-3xl z-[100] flex flex-col items-center justify-center p-12 overflow-hidden"
-          >
-            <div className="absolute inset-0 flex items-center justify-center opacity-5 select-none pointer-events-none">
-              <span className="text-[25vw] font-black tracking-tighter text-white whitespace-nowrap">ARCHITECTING</span>
-            </div>
-            
-            <div className="w-full max-w-md space-y-16 text-center relative z-10">
-              <div className="relative w-48 h-48 mx-auto">
-                <svg className="w-full h-full" viewBox="0 0 100 100">
-                  <circle className="text-white/5 stroke-current" strokeWidth="8" cx="50" cy="50" r="40" fill="transparent" />
-                  <motion.circle 
-                    className="text-primary stroke-current" 
-                    strokeWidth="8" 
-                    strokeLinecap="round" 
-                    cx="50" 
-                    cy="50" 
-                    r="40" 
-                    fill="transparent"
-                    initial={{ pathLength: 0 }}
-                    animate={{ pathLength: progress / 100 }}
-                    transition={{ type: 'spring', damping: 20, stiffness: 60 }}
-                  />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center font-black text-white text-4xl tracking-tighter">
-                  {progress}%
-                </div>
-              </div>
-              
-              <div className="space-y-6">
-                <h2 className="text-5xl font-black tracking-tighter text-white leading-none">Extraction Sequence</h2>
-                <div className="flex flex-col items-center gap-3">
-                  <div className="h-1 w-32 bg-white/10 rounded-full overflow-hidden">
-                    <motion.div 
-                      className="h-full bg-primary"
-                      animate={{ x: ['-100%', '100%'] }}
-                      transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
-                    />
-                  </div>
-                  <p className="text-primary text-[11px] font-black uppercase tracking-[0.4em]">
-                    {progress < 40 ? 'Analyzing Pixel Grid' : progress < 80 ? 'Deconstructing Metadata' : 'Finalizing Sums'}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Success Animation */}
-      <AnimatePresence>
-        {success && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-secondary z-[102] flex flex-col items-center justify-center p-12"
-          >
-            <motion.div 
-              initial={{ scale: 0.8, rotate: -10 }}
-              animate={{ scale: 1, rotate: 0 }}
-              className="text-center space-y-12"
-            >
-              <div className="w-48 h-48 bg-white/10 rounded-[3rem] flex items-center justify-center mx-auto border-4 border-white/20 shadow-2xl">
-                <span className="material-symbols-outlined text-white text-[120px] font-black">verified</span>
-              </div>
-              <div className="space-y-6">
-                <h2 className="text-7xl font-black tracking-tighter text-white leading-none">Vault Secured</h2>
-                <p className="text-white/60 font-black uppercase tracking-[0.5em] text-[11px]">Directive committed to local archive</p>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <motion.section variants={itemVariants} className="space-y-6">
-        <p className="text-primary text-[11px] font-black uppercase tracking-[0.6em] ml-2">Protocol Capture</p>
-        <h2 className="text-7xl font-black tracking-tighter text-on-surface leading-none">Input Directive</h2>
-      </motion.section>
-
-      {/* Primary Action: Camera Scan */}
-      <motion.section 
-        variants={itemVariants}
-        whileHover={{ scale: 1.01 }}
-        whileTap={{ scale: 0.98 }}
-        className="group relative cursor-pointer"
-        onClick={() => fileInputRef.current.click()}
-      >
-        <div className="w-full aspect-[16/20] md:aspect-[16/10] rounded-[4rem] overflow-hidden relative shadow-2xl bg-on-surface border border-white/10">
-           {/* Dynamic Background Pattern */}
-           <div className="absolute inset-0 opacity-20 pointer-events-none">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(var(--primary-color),0.5)_0%,transparent_70%)]"></div>
-           </div>
-           
-           <div className="absolute inset-0 p-16 flex flex-col justify-between z-10">
-            <div className="flex justify-between items-start">
-              <div className="w-24 h-24 bg-white/10 backdrop-blur-3xl rounded-[2.5rem] flex items-center justify-center border border-white/20 text-white shadow-2xl">
-                <span className="material-symbols-outlined text-5xl font-black">photo_camera</span>
-              </div>
-              <div className="bg-primary/20 backdrop-blur-3xl px-8 py-4 rounded-2xl border border-primary/20">
-                <p className="text-white text-[11px] font-black uppercase tracking-[0.3em]">AI ARCHITECT ENGINE v3</p>
-              </div>
-            </div>
-            
-            <div className="space-y-6">
-              <h3 className="text-6xl font-black text-white tracking-tighter leading-none">Instant Archival</h3>
-              <p className="text-white/50 text-xl font-medium leading-relaxed max-w-sm">Capture physical merchant metadata with millisecond-grade precision.</p>
-              <div className="pt-4 flex items-center gap-4">
-                 <div className="flex -space-x-3">
-                    {[1,2,3].map(i => (
-                       <div key={i} className="w-8 h-8 rounded-full bg-white/10 border-2 border-on-surface backdrop-blur-sm"></div>
-                    ))}
-                 </div>
-                 <p className="text-[11px] font-black text-white/40 uppercase tracking-widest">50k+ Protocol Captures</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </motion.section>
-
-      {/* Manual Entry Modal Overlay */}
-      <AnimatePresence>
-        {showManualForm && (
-          <div className="fixed inset-0 bg-on-surface/30 backdrop-blur-2xl z-[101] flex items-end md:items-center justify-center p-6">
-            <motion.div 
-              initial={{ y: 50, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 50, opacity: 0 }}
-              className="w-full max-w-xl bg-surface p-12 rounded-[4rem] shadow-[0_50px_100px_rgba(0,0,0,0.5)] border border-outline-variant/10"
-            >
-              <div className="flex justify-between items-center mb-12">
-                <div className="space-y-1">
-                  <p className="text-primary text-[10px] font-black uppercase tracking-[0.4em]">Staging Platform</p>
-                  <h3 className="text-4xl font-black tracking-tighter text-on-surface leading-none">Manual Protocol</h3>
-                </div>
-                <button 
-                  onClick={() => setShowManualForm(false)} 
-                  className="w-14 h-14 rounded-full bg-surface-container-low flex items-center justify-center text-on-surface hover:text-error transition-colors shadow-sm"
-                >
-                  <span className="material-symbols-outlined font-black text-xl">close</span>
-                </button>
-              </div>
-
-              <form onSubmit={handleManualSubmit} className="space-y-8">
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black uppercase tracking-[0.3em] text-outline ml-4">Merchant Descriptor</label>
-                  <input 
-                    required
-                    className="w-full bg-surface-container-low p-6 rounded-[2rem] font-black text-lg text-on-surface focus:outline-none focus:bg-surface-container-high transition-all border border-transparent focus:border-primary/20 shadow-inner" 
-                    placeholder="Identify Beneficiary"
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-[0.3em] text-outline ml-4">Capital Value (₦)</label>
-                    <input 
-                      required
-                      type="number"
-                      step="0.01"
-                      className="w-full bg-surface-container-low p-6 rounded-[2rem] font-black text-lg text-on-surface focus:outline-none focus:bg-surface-container-high transition-all border border-transparent focus:border-primary/20 shadow-inner" 
-                      placeholder="0.00"
-                      value={formData.amount}
-                      onChange={(e) => setFormData({...formData, amount: e.target.value})}
-                    />
-                  </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-[0.3em] text-outline ml-4">Ledger Vector</label>
-                    <div className="flex bg-surface-container-low p-2 rounded-[2.5rem] h-[76px] shadow-inner">
-                      <button 
-                        type="button"
-                        onClick={() => setFormData({...formData, isPositive: false})}
-                        className={`flex-1 rounded-[2.2rem] text-[10px] font-black transition-all ${!formData.isPositive ? 'bg-error text-white shadow-xl' : 'text-outline uppercase opacity-40'}`}
-                      >DEBIT</button>
-                      <button 
-                        type="button"
-                        onClick={() => setFormData({...formData, isPositive: true})}
-                        className={`flex-1 rounded-[2.2rem] text-[10px] font-black transition-all ${formData.isPositive ? 'bg-secondary text-white shadow-xl' : 'text-outline uppercase opacity-40'}`}
-                      >CREDIT</button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <label className="text-[10px] font-black uppercase tracking-[0.3em] text-outline ml-4">Tactical Allocation</label>
-                  <div className="flex flex-wrap gap-3">
-                    {categories.map(cat => (
-                      <button 
-                        key={cat}
-                        type="button"
-                        onClick={() => setFormData({...formData, category: cat})}
-                        className={`px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                          formData.category === cat 
-                            ? 'bg-on-surface text-surface shadow-xl' 
-                            : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high border border-outline-variant/10'
-                        }`}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <motion.button 
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  type="submit" 
-                  className="w-full bg-primary text-white p-7 rounded-[2.5rem] font-black uppercase tracking-[0.3em] text-xs mt-10 shadow-2xl shadow-primary/20 transition-all"
-                >
-                  Publish Directive to Ledger
-                </motion.button>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Alternative Methods Split */}
-      <motion.section variants={itemVariants} className="grid grid-cols-2 gap-8">
-        <motion.button 
-          whileHover={{ y: -5 }}
-          onClick={() => fileInputRef.current.click()}
-          className="card-lowest p-10 flex flex-col items-start gap-8 border-transparent hover:border-primary/10 transition-all group shadow-sm bg-surface-container-lowest"
-        >
-          <div className="w-16 h-16 rounded-[1.5rem] bg-surface-container-high flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all duration-500 shadow-inner">
-            <span className="material-symbols-outlined text-3xl font-black">file_present</span>
-          </div>
-          <div className="text-left space-y-2">
-            <p className="text-on-surface text-2xl font-black tracking-tight leading-none">Digital Import</p>
-            <p className="text-[10px] text-outline font-black uppercase tracking-[0.2em] opacity-40">Remote PDF Stream</p>
-          </div>
-        </motion.button>
-
-        <motion.button 
-          whileHover={{ y: -5 }}
-          onClick={() => setShowManualForm(true)}
-          className="card-lowest p-10 flex flex-col items-start gap-8 border-transparent hover:border-primary/10 transition-all group shadow-sm bg-surface-container-lowest"
-        >
-          <div className="w-16 h-16 rounded-[1.5rem] bg-surface-container-high flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all duration-500 shadow-inner">
-            <span className="material-symbols-outlined text-3xl font-black">edit_square</span>
-          </div>
-          <div className="text-left space-y-2">
-            <p className="text-on-surface text-2xl font-black tracking-tight leading-none">Manual Dial</p>
-            <p className="text-[10px] text-outline font-black uppercase tracking-[0.2em] opacity-40">Override Protocol</p>
-          </div>
-        </motion.button>
-      </motion.section>
-
-      {/* Trust Footer */}
-      <motion.footer 
-        variants={itemVariants} 
-        className="p-10 rounded-[3.5rem] bg-surface-container-low flex items-start gap-8 border border-outline-variant/10 shadow-inner"
-      >
-        <div className="w-16 h-16 bg-primary/10 rounded-3xl flex items-center justify-center text-primary border border-primary/20 shrink-0">
-          <span className="material-symbols-outlined text-4xl font-black">security_update_good</span>
-        </div>
-        <div className="space-y-3">
-          <h4 className="text-[11px] font-black text-on-surface uppercase tracking-[0.4em] opacity-80">Encryption Enclave Active</h4>
-          <p className="text-[12px] text-on-surface-variant font-medium leading-relaxed max-w-lg opacity-60">
-            All analytical extractions are processed within your local architectural environment. Your financial patterns are never exposed to external telemetry.
+      <header className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
+        <div>
+          <p className="section-heading">Capture</p>
+          <h1 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">Turn a receipt into a ledger entry.</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
+            Scan an image for review, or add a clean manual transaction when you already know the details.
           </p>
         </div>
-      </motion.footer>
-    </motion.div>
+        <div className="card-muted p-4">
+          <div className="flex gap-3">
+            <ShieldCheck className="mt-0.5 h-5 w-5 text-success" aria-hidden="true" />
+            <p className="text-sm text-muted">
+              {settings.autoExtract
+                ? 'OCR runs in your browser. Extracted entries stay in the review inbox until you approve them.'
+                : 'Auto extraction is off. Uploaded receipts go straight to review for manual correction.'}
+            </p>
+          </div>
+        </div>
+      </header>
+
+      {error && (
+        <section className="card border-danger bg-danger-soft p-4" role="alert">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex gap-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 text-danger" aria-hidden="true" />
+              <div>
+                <h2 className="font-semibold">Capture needs attention</h2>
+                <p className="mt-1 text-sm text-muted">{error}</p>
+              </div>
+            </div>
+            <button type="button" className="button-secondary bg-surface" onClick={() => setError('')}>
+              Dismiss
+            </button>
+          </div>
+        </section>
+      )}
+
+      {successMode && (
+        <section className="card border-success bg-success-soft p-4" role="status">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 text-success" aria-hidden="true" />
+            <div>
+              <h2 className="font-semibold">{successMode === 'manual' ? 'Entry saved' : 'Scan sent to review'}</h2>
+              <p className="mt-1 text-sm text-muted">
+                {successMode === 'manual'
+                  ? 'Opening the ledger with your new transaction.'
+                  : 'Opening the inbox so you can confirm the extracted details.'}
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
+      <section className="grid gap-4 md:grid-cols-2">
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isProcessing}
+          aria-busy={isProcessing}
+          className="card flex min-h-[18rem] flex-col items-start justify-between p-6 text-left hover:-translate-y-0.5 hover:bg-surface-muted sm:p-8"
+        >
+          <span className="flex h-12 w-12 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> : <Camera className="h-5 w-5" aria-hidden="true" />}
+          </span>
+          <span>
+            <span className="block text-2xl font-extrabold tracking-tight">Scan receipt image</span>
+            <span className="mt-2 block max-w-sm text-sm leading-6 text-muted">
+              Upload a receipt screenshot or photo. LedgerSnap {settings.autoExtract ? 'extracts the likely merchant, amount, and direction.' : 'keeps it in review until you enter the details.'}
+            </span>
+            {isProcessing && (
+              <span className="mt-5 block">
+                <span className="mb-2 flex items-center justify-between text-sm font-semibold">
+                  Reading image
+                  <span>{progress}%</span>
+                </span>
+                <span className="block h-2 overflow-hidden rounded-full bg-surface-muted">
+                  <span className="block h-full rounded-full bg-primary" style={{ width: `${progress}%` }} />
+                </span>
+              </span>
+            )}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowManualForm(true)}
+          className="card flex min-h-[18rem] flex-col items-start justify-between p-6 text-left hover:-translate-y-0.5 hover:bg-surface-muted sm:p-8"
+        >
+          <span className="flex h-12 w-12 items-center justify-center rounded-md bg-accent text-accent-foreground">
+            <PencilLine className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <span>
+            <span className="block text-2xl font-extrabold tracking-tight">Add manual entry</span>
+            <span className="mt-2 block max-w-sm text-sm leading-6 text-muted">
+              Log transfers, cash payments, or scan failures directly into the ledger with the right category.
+            </span>
+          </span>
+        </button>
+      </section>
+
+      <section className="card p-5">
+        <p className="section-heading">Capture flow</p>
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          {[
+            ['Upload', 'Choose a receipt image from camera roll or files.'],
+            ['Review', 'Correct the extracted name, amount, and category.'],
+            ['Approve', 'Move the entry into your permanent ledger.'],
+          ].map(([title, description], index) => (
+            <div key={title} className="rounded-lg border border-border bg-surface-muted p-4">
+              <span className="flex h-8 w-8 items-center justify-center rounded-md bg-surface font-bold">{index + 1}</span>
+              <h2 className="mt-4 font-semibold">{title}</h2>
+              <p className="mt-1 text-sm leading-6 text-muted">{description}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {showManualForm && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-foreground/40 p-3 backdrop-blur-sm sm:items-center" role="dialog" aria-modal="true" aria-labelledby="manual-entry-title">
+          <div className="max-h-[94vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-border bg-surface p-5 shadow-xl sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="section-heading">Manual entry</p>
+                <h2 id="manual-entry-title" className="mt-1 text-2xl font-bold tracking-tight">Add transaction details</h2>
+              </div>
+              <button type="button" className="button-ghost h-10 w-10 p-0" onClick={() => setShowManualForm(false)} aria-label="Close manual entry form">
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
+
+            <form onSubmit={handleManualSubmit} className="mt-6 space-y-5">
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div className="space-y-2 sm:col-span-2">
+                  <label className="label" htmlFor="merchant">Merchant or payer</label>
+                  <input
+                    id="merchant"
+                    className="input"
+                    type="text"
+                    autoComplete="organization"
+                    placeholder="e.g. Shoprite Ikeja"
+                    value={formData.name}
+                    onChange={(event) => setFormData({ ...formData, name: event.target.value })}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="label" htmlFor="amount">Amount</label>
+                  <input
+                    id="amount"
+                    className="input"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={formData.amount}
+                    onChange={(event) => setFormData({ ...formData, amount: event.target.value })}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="label" htmlFor="account">Account</label>
+                  <input
+                    id="account"
+                    className="input"
+                    type="text"
+                    autoComplete="off"
+                    placeholder="e.g. GTBank"
+                    value={formData.account}
+                    onChange={(event) => setFormData({ ...formData, account: event.target.value })}
+                  />
+                </div>
+
+                <fieldset className="space-y-2">
+                  <legend className="label">Direction</legend>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      className={!formData.isPositive ? 'button-primary bg-danger text-white' : 'button-secondary'}
+                      onClick={() => setFormData({ ...formData, isPositive: false })}
+                    >
+                      Debit
+                    </button>
+                    <button
+                      type="button"
+                      className={formData.isPositive ? 'button-primary bg-success text-white' : 'button-secondary'}
+                      onClick={() => setFormData({ ...formData, isPositive: true })}
+                    >
+                      Credit
+                    </button>
+                  </div>
+                </fieldset>
+
+                <div className="space-y-2">
+                  <label className="label" htmlFor="category">Category</label>
+                  <select
+                    id="category"
+                    className="input"
+                    value={formData.category}
+                    onChange={(event) => setFormData({ ...formData, category: event.target.value })}
+                  >
+                    {CATEGORIES.map((category) => (
+                      <option key={category} value={category}>{category}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="rounded-lg bg-surface-muted p-4 text-sm text-muted">
+                This will save {formData.amount ? formatCurrency(Number(formData.amount)) : 'the amount'} as a {formData.isPositive ? 'credit' : 'debit'}.
+              </div>
+
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button type="button" className="button-secondary" onClick={() => setShowManualForm(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="button-primary">
+                  Save entry
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 

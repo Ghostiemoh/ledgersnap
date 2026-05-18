@@ -1,121 +1,131 @@
-import React from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useLedger, getCategoryIcon } from '../context/LedgerContext';
-import { motion } from 'framer-motion';
+import React, { useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, CheckCircle2, Copy, Download, FileText, Trash2 } from 'lucide-react';
+import CategoryIcon from '../components/CategoryIcon';
+import { useLedger } from '../context/LedgerContext';
+import { formatSignedCurrency } from '../lib/formatters';
+
+const makeHash = (id = '') => `LS-${id.toUpperCase().replace(/[^A-Z0-9]/g, '').padEnd(8, '0').slice(0, 8)}`;
 
 const LedgerPRD = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { transactions } = useLedger();
-  
-  const tx = transactions.find(t => t.id === parseInt(id));
+  const { getTransaction, deleteTransaction } = useLedger();
+  const [copied, setCopied] = useState(false);
+  const tx = getTransaction(id);
 
-  if (!tx) return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 text-center">
-      <span className="material-symbols-outlined text-6xl text-outline/20 mb-6">error</span>
-      <h2 className="text-2xl font-black tracking-tighter mb-4">Entry Not Found</h2>
-      <button onClick={() => navigate('/')} className="bg-on-surface text-surface px-8 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest">Return to Archive</button>
-    </div>
-  );
+  if (!tx) {
+    return (
+      <div className="page-shell flex min-h-[70vh] max-w-2xl flex-col items-center justify-center text-center">
+        <FileText className="h-12 w-12 text-muted" aria-hidden="true" />
+        <h1 className="mt-5 text-2xl font-bold">Transaction not found</h1>
+        <p className="mt-2 text-sm text-muted">The entry may have been removed or the link is no longer valid.</p>
+        <Link to="/tracker" className="button-primary mt-6">Return to ledger</Link>
+      </div>
+    );
+  }
 
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: { 
-      opacity: 1,
-      transition: { staggerChildren: 0.1 }
-    }
+  const hash = makeHash(tx.id);
+
+  const copyHash = async () => {
+    await navigator.clipboard?.writeText(hash);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   };
 
-  const itemVariants = {
-    hidden: { y: 20, opacity: 0 },
-    visible: { y: 0, opacity: 1 }
+  const handleDelete = () => {
+    deleteTransaction(tx.id);
+    navigate('/tracker');
+  };
+
+  const exportDetail = () => {
+    const payload = {
+      id: tx.id,
+      fingerprint: hash,
+      name: tx.name,
+      category: tx.category,
+      account: tx.account || '',
+      date: tx.date,
+      time: tx.time,
+      amount: tx.amount,
+      direction: tx.amount > 0 ? 'Credit' : 'Debit',
+      status: tx.status || 'Reconciled',
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `LedgerSnap_${tx.id}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
-    <motion.div 
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-      className="px-6 py-8 md:py-12 pb-32 max-w-4xl mx-auto space-y-12 md:space-y-16"
-    >
-      {/* Header Info */}
-      <motion.div variants={itemVariants} className="flex flex-col md:flex-row md:items-center justify-between gap-8 border-b border-outline-variant/10 pb-10 md:pb-12">
-        <div className="space-y-4">
-          <div className="flex items-center gap-3">
-             <button onClick={() => navigate(-1)} className="w-10 h-10 rounded-2xl bg-surface-container-low flex items-center justify-center text-on-surface-variant hover:bg-on-surface hover:text-surface transition-all">
-                <span className="material-symbols-outlined text-xl">arrow_back</span>
-             </button>
-             <span className="text-[10px] font-black text-primary uppercase tracking-[0.5em]">Ledger Detail: TXN-{tx.id}</span>
-          </div>
-          <h1 className="text-4xl md:text-6xl font-black tracking-tighter text-on-surface leading-tight max-w-xl">{tx.name}</h1>
-          <div className="flex flex-wrap gap-4 pt-2">
-            <span className="px-5 py-2.5 rounded-full bg-surface-container-high text-[11px] font-black uppercase tracking-widest">{tx.category}</span>
-            <span className="px-5 py-2.5 rounded-full bg-surface-container-high text-[11px] font-black uppercase tracking-widest opacity-60">{tx.date} • {tx.time}</span>
-          </div>
-        </div>
-        <div className="flex flex-row md:flex-col items-center md:items-end justify-between md:justify-end gap-3 flex-shrink-0">
-           <div className={`w-16 h-16 md:w-20 md:h-20 rounded-[1.5rem] md:rounded-[2.5rem] flex items-center justify-center text-surface shadow-xl ${tx.amount > 0 ? 'bg-secondary' : 'bg-on-surface'}`}>
-             <span className="material-symbols-outlined text-3xl md:text-4xl font-black">{getCategoryIcon(tx.category)}</span>
-           </div>
-           <div className="text-right">
-             <p className="text-[10px] font-black text-outline uppercase tracking-[0.3em]">Lifecycle</p>
-             <p className="text-[11px] font-black text-on-surface uppercase tracking-widest mt-1">Authorized</p>
-           </div>
-        </div>
-      </motion.div>
+    <div className="page-shell max-w-4xl space-y-8">
+      <button type="button" className="button-ghost" onClick={() => navigate(-1)}>
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+        Back
+      </button>
 
-      {/* Financial Breakdown */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12">
-        <motion.div variants={itemVariants} className="card-lowest p-8 md:p-12 shadow-sm transition-all hover:bg-surface-bright flex flex-col justify-between min-h-[220px] bg-surface-container-lowest">
-          <p className="text-[10px] md:text-[11px] font-black text-outline uppercase tracking-[0.4em] opacity-40 mb-8 block">Transaction Value</p>
-          <div className="space-y-3">
-            <div className={`text-4xl md:text-6xl font-black tracking-tighter leading-none flex items-baseline gap-3 md:gap-4 ${tx.amount > 0 ? 'text-secondary' : 'text-on-surface'}`}>
-              <span className="text-2xl md:text-4xl opacity-50">{tx.amount > 0 ? '+' : '-'}₦</span>
-              <span className="whitespace-nowrap">{Math.abs(tx.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+      <section className="card overflow-hidden">
+        <div className={`border-b border-border p-5 ${tx.amount > 0 ? 'bg-success-soft' : 'bg-surface-muted'} sm:p-6`}>
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <p className="section-heading">Transaction detail</p>
+              <h1 className="mt-2 text-3xl font-extrabold tracking-tight">{tx.name}</h1>
+              <p className="mt-2 text-sm text-muted">{tx.category} - {tx.account || 'Ledger'} - {tx.date} at {tx.time}</p>
             </div>
-            <p className="text-[10px] md:text-[11px] font-black text-on-surface-variant uppercase tracking-widest opacity-60">Base Currency: NGN</p>
+            <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-md ${tx.amount > 0 ? 'bg-success text-white' : 'bg-surface text-muted'}`}>
+              <CategoryIcon category={tx.category} className="h-5 w-5" />
+            </span>
           </div>
-        </motion.div>
-        
-        <motion.div variants={itemVariants} className="card-lowest p-8 md:p-12 shadow-sm transition-all hover:bg-surface-bright bg-surface-container-lowest flex flex-col justify-between min-h-[220px]">
-          <div>
-            <p className="text-[10px] md:text-[11px] font-black text-outline uppercase tracking-[0.4em] opacity-40 mb-8 block">Verification Hash</p>
-            <p className="text-[11px] md:text-[13px] font-bold text-on-surface font-mono opacity-80 break-all leading-relaxed">
-              #{Math.random().toString(36).substring(2, 12).toUpperCase()}
-              {Math.random().toString(36).substring(2, 12).toUpperCase()}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-             <div className="w-2.5 h-2.5 rounded-full bg-secondary animate-pulse"></div>
-             <p className="text-[10px] font-black uppercase tracking-widest text-secondary">Integrity Check Passed</p>
-          </div>
-        </motion.div>
-      </div>
+        </div>
 
-      {/* Archival Notes */}
-      <motion.div variants={itemVariants} className="card-lowest p-10 md:p-12 shadow-sm border border-outline-variant/5 bg-transparent">
-        <div className="flex items-center gap-5 mb-10">
-           <div className="w-12 h-12 md:w-16 md:h-16 rounded-[1.5rem] bg-surface-container-high flex items-center justify-center text-primary">
-              <span className="material-symbols-outlined text-2xl md:text-3xl">notes</span>
-           </div>
-           <div>
-             <h3 className="text-xl md:text-3xl font-black tracking-tighter text-on-surface mb-1">Archival Intelligence</h3>
-             <p className="text-[10px] md:text-[11px] font-black uppercase tracking-[0.4em] text-outline opacity-40">System-Generated Narrative</p>
-           </div>
+        <div className="grid gap-4 p-5 sm:grid-cols-2 sm:p-6">
+          <article className="rounded-lg border border-border bg-surface p-4">
+            <p className="section-heading">Amount</p>
+            <p className={`stat-number mt-2 text-3xl font-extrabold ${tx.amount > 0 ? 'text-success' : 'text-foreground'}`}>
+              {formatSignedCurrency(tx.amount)}
+            </p>
+          </article>
+          <article className="rounded-lg border border-border bg-surface p-4">
+            <p className="section-heading">Status</p>
+            <p className="mt-2 inline-flex items-center gap-2 font-semibold text-success">
+              <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+              {tx.status || 'Reconciled'}
+            </p>
+          </article>
+          <article className="rounded-lg border border-border bg-surface p-4 sm:col-span-2">
+            <p className="section-heading">Ledger fingerprint</p>
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <code className="break-all rounded-md bg-surface-muted px-3 py-2 font-mono text-sm text-foreground">{hash}</code>
+              <button type="button" className="button-secondary" onClick={copyHash}>
+                <Copy className="h-4 w-4" aria-hidden="true" />
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          </article>
         </div>
-        <p className="text-base md:text-lg text-on-surface-variant font-medium leading-[1.8] max-w-2xl opacity-80 mb-10">
-          This entry was reconciled during the Q2 Archival Window. The spending vector for <span className="text-on-surface font-black">{tx.name}</span> aligns with verified organizational directives within the <span className="text-on-surface font-black">{tx.category}</span> sector. Digital integrity verification was successfully signed by Shard Nigerian-West-01.
+      </section>
+
+      <section className="card p-5 sm:p-6">
+        <p className="section-heading">Entry narrative</p>
+        <p className="mt-3 max-w-3xl text-sm leading-6 text-muted">
+          This transaction is approved into the local LedgerSnap book as a {tx.amount > 0 ? 'credit' : 'debit'} under {tx.category}.
+          Use the ledger view to search it later by merchant, account, or category.
         </p>
-        <div className="flex flex-wrap gap-4 border-t border-outline-variant/10 pt-10">
-           <button className="flex-1 min-w-[140px] bg-on-surface text-surface py-5 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:opacity-90 transition-opacity flex items-center justify-center gap-3 shadow-xl">
-             <span className="material-symbols-outlined text-lg">edit_note</span> Edit Archive
-           </button>
-           <button className="flex-1 min-w-[140px] bg-surface-container px-8 py-5 rounded-2xl text-[11px] font-black uppercase tracking-widest text-on-surface hover:bg-surface-container-high transition-all border border-outline-variant/10 flex items-center justify-center gap-3">
-             <span className="material-symbols-outlined text-lg">ios_share</span> Export PDF
-           </button>
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+          <button type="button" className="button-secondary" onClick={exportDetail}>
+            <Download className="h-4 w-4" aria-hidden="true" />
+            Export detail
+          </button>
+          <button type="button" className="button-ghost text-danger hover:bg-danger-soft hover:text-danger" onClick={handleDelete}>
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+            Delete entry
+          </button>
         </div>
-      </motion.div>
-    </motion.div>
+      </section>
+    </div>
   );
 };
 
