@@ -21,6 +21,7 @@ const Insights = () => {
       .sort((a, b) => b.amount - a.amount);
   }, [totalOutflow, transactions]);
 
+  const hasEntries = transactions.length > 0;
   const net = totalInflow - totalOutflow;
   const burnRate = totalInflow ? Math.round((totalOutflow / totalInflow) * 100) : 0;
   const topCategory = categoryRows[0];
@@ -45,7 +46,11 @@ const Insights = () => {
         <article className="card bg-surface-strong p-6 text-white dark:text-background">
           <p className="section-heading text-white/65 dark:text-background/70">Liquidity read</p>
           <h2 className="mt-4 max-w-2xl text-3xl font-extrabold tracking-tight">
-            {net >= 0 ? 'Cash is ahead of spending for the current ledger.' : 'Expenses are running ahead of income.'}
+            {!hasEntries
+              ? 'Start with one receipt or manual entry to unlock cash-flow insights.'
+              : net >= 0
+                ? 'Cash is ahead of spending for the current ledger.'
+                : 'Expenses are running ahead of income.'}
           </h2>
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
             <div className="rounded-lg border border-white/15 bg-white/10 p-4">

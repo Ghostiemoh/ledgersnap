@@ -30,6 +30,18 @@ const initialInbox = [];
 const defaultSettings = {
   autoExtract: true,
 };
+const storageVersion = '2';
+
+const legacySeedTransactions = new Map([
+  ['tx1', 'Shoprite Ikeja'],
+  ['tx2', 'Client deposit - Project Omega'],
+  ['tx3', 'Cafe Neo Victoria Island'],
+]);
+
+const legacySeedInbox = new Map([
+  ['rb1', 'MTN airtime'],
+  ['rb2', 'Freelance payment - Adesola'],
+]);
 
 const safeRead = (key, fallback) => {
   try {
@@ -38,6 +50,22 @@ const safeRead = (key, fallback) => {
   } catch {
     return fallback;
   }
+};
+
+const removeLegacySeeds = (items, legacySeeds) => {
+  if (localStorage.getItem('ls_schema_version') === storageVersion) return items;
+  if (!Array.isArray(items)) return [];
+
+  return items.filter((item) => legacySeeds.get(item.id) !== item.name);
+};
+
+const readSettings = () => {
+  const saved = safeRead('ls_settings', defaultSettings);
+
+  return {
+    ...defaultSettings,
+    autoExtract: saved.autoExtract ?? defaultSettings.autoExtract,
+  };
 };
 
 export const useLedger = () => {
@@ -49,11 +77,17 @@ export const useLedger = () => {
 };
 
 export const LedgerProvider = ({ children }) => {
-  const [transactions, setTransactions] = useState(() => safeRead('ls_transactions', initialTransactions));
-  const [inbox, setInbox] = useState(() => safeRead('ls_inbox', initialInbox));
-  const [settings, setSettings] = useState(() =>
-    safeRead('ls_settings', defaultSettings),
+  const [transactions, setTransactions] = useState(() =>
+    removeLegacySeeds(safeRead('ls_transactions', initialTransactions), legacySeedTransactions),
   );
+  const [inbox, setInbox] = useState(() =>
+    removeLegacySeeds(safeRead('ls_inbox', initialInbox), legacySeedInbox),
+  );
+  const [settings, setSettings] = useState(readSettings);
+
+  useEffect(() => {
+    localStorage.setItem('ls_schema_version', storageVersion);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('ls_transactions', JSON.stringify(transactions));
@@ -145,6 +179,8 @@ export const LedgerProvider = ({ children }) => {
   }, []);
 
   const exportLedger = useCallback(() => {
+    if (transactions.length === 0) return false;
+
     const csv = [
       ['Date', 'Time', 'Name', 'Category', 'Account', 'Amount (NGN)', 'Direction'].join(','),
       ...transactions.map((tx) =>
@@ -167,6 +203,7 @@ export const LedgerProvider = ({ children }) => {
     link.download = `LedgerSnap_Export_${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+    return true;
   }, [transactions]);
 
   const value = useMemo(

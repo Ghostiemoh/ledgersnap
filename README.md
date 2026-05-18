@@ -11,6 +11,7 @@ LedgerSnap is a receipt-to-ledger workspace for Nigerian operators and small tea
 - View cash-in, cash-out, net position, expense mix, and top spending category.
 - Export the full ledger as CSV and export individual transaction details as JSON.
 - Store data locally in the browser so the app is usable without a backend.
+- Start with a zero-record workspace. No sample transactions are shipped into the ledger.
 
 ## Stack
 
@@ -38,3 +39,5 @@ npm run preview
 ## Data Storage
 
 LedgerSnap currently stores ledger data in browser local storage. This makes the app immediately usable and private on a single device, but clearing browser data removes the ledger. Use the CSV export before clearing a workspace.
+
+Fresh installs start at zero records. Older browser sessions that previously had bundled sample records are migrated by removing only the known legacy sample rows while preserving user-created entries.

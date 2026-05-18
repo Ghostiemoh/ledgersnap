@@ -19,6 +19,7 @@ const Settings = () => {
   const { settings, updateSetting, resetAllData, exportLedger, transactionCount, inboxCount } = useLedger();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
+  const [exportMessage, setExportMessage] = useState('');
 
   useEffect(() => {
     if (!showResetConfirm) return undefined;
@@ -30,7 +31,8 @@ const Settings = () => {
   }, [showResetConfirm]);
 
   const handleExport = () => {
-    exportLedger();
+    const didExport = exportLedger();
+    setExportMessage(didExport ? 'Your CSV download has started.' : 'Add at least one approved transaction before exporting.');
     setExportSuccess(true);
     setTimeout(() => setExportSuccess(false), 2400);
   };
@@ -60,8 +62,8 @@ const Settings = () => {
           <div className="flex items-start gap-3">
             <ShieldCheck className="mt-0.5 h-5 w-5 text-success" aria-hidden="true" />
             <div>
-              <h2 className="font-semibold">Ledger exported</h2>
-              <p className="mt-1 text-sm text-muted">Your CSV download has started.</p>
+              <h2 className="font-semibold">{transactionCount > 0 ? 'Ledger exported' : 'Nothing to export yet'}</h2>
+              <p className="mt-1 text-sm text-muted">{exportMessage}</p>
             </div>
           </div>
         </section>
@@ -114,7 +116,7 @@ const Settings = () => {
           <h2 className="mt-1 text-lg font-bold">Export and clear</h2>
         </div>
         <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
-          <button type="button" className="button-secondary justify-start p-4 text-left" onClick={handleExport}>
+          <button type="button" className="button-secondary justify-start p-4 text-left" onClick={handleExport} disabled={transactionCount === 0}>
             <Download className="h-5 w-5" aria-hidden="true" />
             <span>
               <span className="block font-semibold">Export CSV</span>

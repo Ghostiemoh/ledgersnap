@@ -9,6 +9,7 @@ const Home = () => {
   const navigate = useNavigate();
   const { transactions, balance, totalInflow, totalOutflow, inboxCount, transactionCount } = useLedger();
   const latestTransactions = transactions.slice(0, 5);
+  const isEmptyWorkspace = transactionCount === 0 && inboxCount === 0;
 
   return (
     <div className="page-shell space-y-8">
@@ -100,6 +101,27 @@ const Home = () => {
               Review inbox
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </Link>
+          </div>
+        </section>
+      )}
+
+      {isEmptyWorkspace && (
+        <section className="card border-primary bg-surface p-5 sm:p-6">
+          <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div>
+              <p className="section-heading">Start at zero</p>
+              <h2 className="mt-2 text-2xl font-extrabold tracking-tight">Your launch workspace is empty and ready for real records.</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+                Add your first receipt or manual transaction. Nothing is preloaded, estimated, or mixed with sample entries.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Link to="/add" className="button-primary">
+                <Camera className="h-4 w-4" aria-hidden="true" />
+                Add first record
+              </Link>
+              <Link to="/settings" className="button-secondary">Review settings</Link>
+            </div>
           </div>
         </section>
       )}
